@@ -12,7 +12,9 @@
 # or send feedback" button that POSTs there. With a bare `connect-src 'self'` the
 # report is refused — in PRODUCTION ONLY, because a local dev server does not
 # apply this file at all, so it fails nowhere you would notice while working on
-# it. This demo was one of eighteen that shipped that way.
+# it. Eighteen pages in this fleet shipped that way before anyone noticed, which
+# is why it is here from the first deploy rather than after the first report
+# that never arrived.
 
 /vendor/*
   Cache-Control: public, max-age=3600
