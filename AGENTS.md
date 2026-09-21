@@ -239,11 +239,14 @@ So are `flat`, `active`, `filter`, `input`, `output`, `sample`, `common`,
 
 ### `vcpkg.json` is invisible from the CMakeLists
 
-GLEW arrives through the vcpkg manifest and the CMakeLists never mentions it —
-so every local build and every macOS CI job passes while the Windows job fails
-at *configure*. The x64 Windows build that ran in Arena was configured and built
-in the Parallels guest with the vcpkg triplet `x64-windows-static-md`; the GitHub
-Windows job itself has still never run.
+GLEW arrives through the vcpkg manifest, and if the CMakeLists does not ask for
+it, every local build and every macOS CI job passes while the Windows job fails
+at *configure*. `find_package(GLEW REQUIRED)` is there now, guarded to
+Windows/Linux, and the release workflow's `windows-latest` job has configured,
+built and shipped an x64 DLL on the strength of it. `ci.yml` is macOS-only, so
+that path is only exercised on a tag. The DLL that ran in Arena was a different
+build, configured in the Parallels guest with the same triplet
+`x64-windows-static-md`; the CI-built one has never been put in front of Arena.
 
 ### ☠️ An ssh session on Windows has no desktop
 
@@ -371,15 +374,18 @@ effect was applied to the **composition**, not to a clip.
   plugin in Arena either — and the bin count and magnitudes are taken from
   macroblock rather than measured here. Resolume's 64-bin FFT mapping is still
   assumed, not measured.
-- **The CI and release workflows have never run.** They are adapted from tinsel
-  and afterglow and this repo has no remote. The Windows DLL was built by hand in
-  the Parallels guest, not by the Windows CI job.
+- **CI and the release workflow have both run and passed on GitHub**, but `ci.yml`
+  is macOS-only: Windows is built only by the release workflow, on a tag. The DLL
+  that ran in Arena was built by hand in the Parallels guest, not by that job, so
+  the released Windows binary has never been in front of a host.
 - **No OpenFX port and no browser demo.** Not required for 0.1.0.
 - **No user guide**, so `guide` is empty in `StoatworksAbout.h` and the About
-  block has three buttons rather than four. `StoatworksAbout.h` and
-  `ATTRIBUTIONS.md` are provisional hand copies in the shape the fleet's sync
-  scripts generate, as graticule's are; register the project in the website's
-  `projects.json` and re-run the syncs before any release.
+  block has three buttons rather than four. That header is **generated** by
+  `sync-about.py` now — the project is registered in the website's
+  `projects.json`, in `sync-about.py`'s TARGETS and in `attributions/names.json`
+  — so do not hand-edit it. `ATTRIBUTIONS.md` is still a provisional hand copy in
+  the shape the fleet's sync scripts generate, because
+  `sync-attributions.py`'s master lists do not know this repo yet.
 - **No factory presets.** The fleet's preset mechanism — and the
   host-restatement bug it exists to survive — is deliberately not here: with
   fifteen controls and four groups there is nothing a preset would say that the

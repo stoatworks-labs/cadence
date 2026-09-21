@@ -109,7 +109,7 @@ about twelve seconds.
 | Inverse telecine | clean 2:3 settles and combs **0** frames once settled; after cadence breaks, **4** re-locks at Lock Time 0.05 s against **0** at 4 s |
 | A resize mid-run | ring rebuilt empty, **0** stale pixels, no crash — also across both Field Source changes |
 | No dead controls | all **14** swept parameters measurably change the picture |
-| macOS binary | universal (`x86_64 arm64`), exports `plugMain`, plist correct, ad-hoc signs |
+| macOS binary | a local build is universal (`x86_64 arm64`), exports `plugMain`, plist correct, and ad-hoc signs |
 | What a host sees | `oxbow probe`: name `SW Cadence`, id `CD01`, type `effect` |
 | Windows x64 DLL | 374,272 B, `dumpbin /EXPORTS` shows `plugMain` |
 | In Resolume Arena 7.27.1 | listed among 112 video effects under its `idstring` `CD01`; applied from Arena's own effects browser; logged `GL vendor=Mesa renderer=llvmpipe … 4.5 (Core Profile)` then `initialised`, and Arena drew its inspector, groups and all; diag log clean of WARN/ERROR/FAIL |
@@ -119,14 +119,14 @@ about twelve seconds.
 
 **Not done:** never run on a GPU in Resolume, and never instantiated in Arena on
 macOS; no frame timing on Windows; no long session, no composition save/reload
-and no preset recall in the host; the CI and release workflows have never run
-because this repo has no remote; no OpenFX port and no browser demo (neither is
+and no preset recall in the host; no OpenFX port and no browser demo (neither is
 required at 0.1.0); no user guide, so the About block has three buttons rather
 than four; no factory presets; the audio path has only ever seen a synthetic
-click train — no real audio reached it in Arena either.
-`source/StoatworksAbout.h` and `ATTRIBUTIONS.md` are provisional hand copies in
-the shape the fleet's sync scripts generate. See [AGENTS.md](AGENTS.md) for the
-full list of what is assumed rather than measured, and for the traps.
+click train — no real audio reached it in Arena either. `ATTRIBUTIONS.md` is
+still a provisional hand copy in the shape the fleet's sync scripts generate;
+`source/StoatworksAbout.h` is generated from the project's registration now. See
+[AGENTS.md](AGENTS.md) for the full list of what is assumed rather than measured,
+and for the traps.
 
 ## Build
 
@@ -145,11 +145,12 @@ macOS builds universal (arm64 + x86_64) by default; add
 A bundle you build yourself is unsigned, which is fine locally — quarantine only
 applies to files that arrive from a browser.
 
-The x64 Windows DLL is cross-compiled in a Parallels guest on this Mac (ARM64
-Windows 11, MSVC 2022 Build Tools, `cmake -A x64`, vcpkg triplet
-`x64-windows-static-md`) — the same route the fleet's `winbuild` scripts take.
-There is no x64 Windows machine in the build loop. The DLL that Arena loaded was
-374,272 B and exports `plugMain`.
+The released x64 Windows DLL is built by the release workflow on a GitHub
+`windows-latest` runner. The one that ran in Arena was cross-compiled locally in
+a Parallels guest on this Mac (ARM64 Windows 11, MSVC 2022 Build Tools,
+`cmake -A x64`, vcpkg triplet `x64-windows-static-md`) — the same route the
+fleet's `winbuild` scripts take, because there is no x64 Windows machine in the
+local build loop. The DLL that Arena loaded was 374,272 B and exports `plugMain`.
 
 ## Building and testing
 
