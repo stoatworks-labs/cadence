@@ -1,0 +1,347 @@
+# AGENTS.md — Cadence
+
+Onboarding for whoever (or whatever) picks this up next. `CLAUDE.md` is the
+short command reference; this is the *why*. Read "What is actually verified"
+before you tell anybody this works.
+
+---
+
+## What the plugin is
+
+An FFGL 2.1 effect (`CD01`, `SW Cadence`) that treats a progressive clip as a
+stream of **fields with real time between them**, puts a film cadence in front
+of it, and shows the result on a progressive screen through a deinterlacer you
+choose — including the ways a deinterlacer gets it wrong.
+
+---
+
+## The one idea
+
+**A field is a slice of time, not just a slice of lines.**
+
+A television picture is two fields 1/50 or 1/60 s apart, each holding alternate
+lines. Once that is the model, every artefact anybody recognises is a
+*consequence* rather than something drawn:
+
+- **combing** — a moving object's two fields are `v · T_field` apart, so a weave
+  puts it in two places at once;
+- **bob bounce** — line doubling has to invent the missing rows, and the
+  invention lands one row lower on one field than the other, so static fine
+  detail jumps;
+- **field-blend ghosting** — averaging two fields of a moving object is two
+  objects at half strength;
+- **motion-adaptive mistakes** — the per-pixel weave/bob decision at a threshold
+  that is too high (combing leaks through) or too low (detail goes soft);
+- **3:2 judder** — 24 frames laid into 60 fields cannot be even, so motion moves
+  in the 2-3-2-3 rhythm;
+- **a cadence break** — an edit landing mid-cycle, which a naive inverse
+  telecine mis-locks on and keeps weaving the wrong pair until it re-locks;
+- **swapped field order** — believing the wrong field came first, which is the
+  two-forward-one-back stutter.
+
+None of those is a mode in the shader. They are what falls out of choosing
+fields by time and rows by parity.
+
+### The rule, in one line
+
+    n(k) = floor( (k + phase + 0.5) · Rs / Rf )
+
+Field `k` carries the source frame current at the *middle* of its own field
+period. Every named pulldown is that with different rates — 24→60 gives
+`0 0 1 1 1 2 2 3 3 3`, which is 2:3; 25→50 and 30→60 give pairs. There is no
+table of cadences anywhere in this repo, and there should not be one.
+
+### What does not fall out, and is the honest limit
+
+**The input is progressive, so a "field" here is half of a whole frame that the
+plugin itself sampled.** Real interlaced footage has fields that were *shot*
+separately; this synthesises them by taking alternate lines of frames chosen by
+time. For Split at 60 fps that is exactly right — one frame, one field, a real
+1/60 s apart. For the telecine it is right up to the input's own frame rate: a
+24p cadence built out of a 60 fps clip resamples, so what a field carries is the
+nearest host frame at or before the moment it was "shot", not a frame shot then.
+On real 24p material played at 24p it is exact; on 60 fps material it is a
+faithful model of a telecine applied to something that was never film.
+
+**Nothing here reads a real interlaced stream.** If a clip is already
+interlaced, this treats it as progressive and interlaces it again.
+
+---
+
+## The shape of the code
+
+| File | What it is |
+| --- | --- |
+| `source/Pulldown.{h,cpp}` | The cadence as arithmetic. Which frame a field carries, which lines it owns, and the naive inverse telecine. No GL, no pixels. |
+| `source/Controls.{h,cpp}` | What a 0..1 slider position means, in physical units. |
+| `source/Shaders.{h,cpp}` | Four fragment shaders. The composite is the deinterlacer. |
+| `source/Cadence.{h,cpp}` | The plugin: parameters, the ring, the field stream, the presentation rule. |
+| `source/PassBuffer.{h,cpp}` | An FBO that reallocates only when it has to and frees its colour texture. From afterglow. |
+| `source/Audio.{h,cpp}`, `source/Clock.{h,cpp}` | The FFT-buffer analyser and the host-clock unit measurement. From macroblock. |
+| `tools/cdtest/` | The offline harness: renders, checks, benchmarks. |
+| `tools/sweep.py` | No control is silently dead. |
+| `tools/verify.sh` | All of it, from a fresh universal build. |
+
+### Three stages, on two processors
+
+The **CPU** decides *which* input frames are fields (by time, out of a ring of
+recent frames) and *which* fields the deinterlacer is looking at. The **GPU**
+does everything that touches a pixel, with integer row parity. That split is the
+reason the checks can be exact: what the CPU decided is a small set of integers
+the harness can read straight out of the plugin, and what the GPU did is a
+picture it can measure.
+
+---
+
+## Traps
+
+Roughly in the order they will bite.
+
+### ☠️ Never sample *between* two rows
+
+Two adjacent rows are two different fields, a field period apart. A bilinear
+sample across them is a sample across time, and it silently turns every mode
+into a soft blend — the picture still looks plausible, which is the dangerous
+part. Every field read in the composite is a `texelFetch` at an integer row, and
+every buffer in this plugin is allocated `Sampling::Nearest` for the same
+reason.
+
+### ☠️ The deinterlacer must be a field late
+
+It consumes fields in **pairs** — `(2j, 2j+1)` — and cannot start on a pair
+until both fields are in. So at field K the pair in hand is `(K-1, K)` when K is
+odd and `(K-2, K-1)` when it is even. Present the pair `(K, K+1)` instead and
+you are showing a field that has not happened yet; present only `(K-1, K)` and
+the field rate halves. One field of latency is what a real deinterlacer has, and
+it is what makes the swap sequence come out `1 0 3 2 5 4` rather than something
+that merely looks jittery.
+
+### ☠️ Swap Field Order is invisible under Weave, and that is correct
+
+A weave uses **both** fields of the pair and does not care which one the
+deinterlacer believes came first — the rows are assigned by parity either way.
+Swap only changes which field is *shown*, so it is visible exactly in the modes
+that show one field at a time. `tools/sweep.py` reported it dead until it was
+given `Mode=1` as its context, and the right fix was the context, not the code.
+
+### ☠️ Lock Time is monotonic in re-locks, NOT in combed frames
+
+This one is worth reading twice, because the obvious assertion is false and it
+passed review once by being plausible.
+
+A lock time of four seconds against a cadence break every 2.7 s never converges,
+so the detector is **frozen** on whichever cycle position it started from. A
+frozen lock is right by accident about two frames in five — so on a real run it
+combed **10** frames where the detector that was actually tracking combed **13**.
+Asserting "a slower lock combs more" is asserting a coin toss: it passes or
+fails on which phases the breaks happened to pick.
+
+What Lock Time actually sets is how quickly the cadence scores settle, and that
+shows up as the number of **re-locks**: 4 at 0.05 s against 0 at 4 s, on the
+same material. `cdtest --lock` asserts that, and the README reports the combed
+counts without ordering them.
+
+The same fact makes Lock Time the weakest entry in `tools/sweep.py`: it reaches
+the *picture* only inside the window after a break where a fast lock has
+re-locked and a slow one has not, so its context is tuned to end inside that
+window and it is the one entry that would go quiet if the run length changed.
+That is documented in the sweep's own docstring rather than left to be
+rediscovered.
+
+### Combing is exactly measurable — do not go looking for edges
+
+Two fields of one film frame carry the **same input frame**. So a woven pair
+whose two source serials differ is combed, and one whose serials agree cannot
+be. `LastPresentationForTest` hands both serials out and `--lock` counts them.
+An edge-detection heuristic here would be less accurate and much harder to
+believe.
+
+### `ScopedFBOBinding` restores the framebuffer and not the viewport
+
+SDK `b1afaf9`. Every pass's `ResizeViewPort()` leaks into the next one, and the
+composite — which draws to the host's own framebuffer and so has no buffer to
+size itself from — inherits whatever the last pass left. Here that would be the
+**16×1** reduce buffer, so the effect would paint sixteen pixels of the bottom
+row and leave the rest of the frame untouched. `ProcessOpenGL` captures
+`GL_VIEWPORT` at the top and restores it before the composite.
+
+### Every `ffglex::Scoped*` binding CLEARS to 0 on scope exit
+
+It does not restore. `FFGLFBO::Initialise` sizes its new colour texture under
+one of those, so **allocating a buffer unbinds the input texture from the active
+unit**. Every `Ensure()` happens before anything binds a texture, and it has to
+stay that way. The symptom is the dangerous part: correct on every frame except
+the one that allocates — so it shows up once at load and once more each time a
+resize or a Field Source change rebuilds the ring.
+
+### `FFGLFBO::Release()` leaks the colour texture
+
+It deletes the framebuffer and the depth renderbuffer, then tests
+`depthBufferID` a second time where it plainly meant `colorTextureID`.
+`PassBuffer::Destroy()` deletes it first. It matters here rather than being
+pedantry: the ring rebuilds on every resize and on every change of Field Source,
+which is eight full pictures at a time.
+
+### A TEXT parameter without `SetTextParameter` kills the whole plugin
+
+`instantiateGL` pushes every declared default back through the setters and
+deletes the instance the moment one returns `FF_FAIL` — which is exactly what
+`CFFGLPlugin::SetTextParameter` does. The About block is display-only text, so
+there is nothing to store, but it has to say so *successfully*. Invisible in
+every in-repo harness, because they call the plugin class directly.
+
+### A ranged STANDARD parameter cannot have a ranged default
+
+`SetParamInfo` clamps a standard default into 0..1 *before* returning, and
+`SetParamRange` can only be called afterwards. So every ranged parameter here is
+a plain 0..1 float and the conversions live in `Controls.cpp`.
+
+### `FFGLShader::Set` has no integer-vector overload
+
+The overloads are `float`, `vec2`, `vec3`, `vec4` and `int` — nothing else.
+`Set( name, someInt, someInt )` resolves to `(float,float)` and issues a
+`glUniform2f` against an `ivec2`, which is a `GL_INVALID_OPERATION` that leaves
+the uniform at zero with nothing anywhere the plugin can see. Every integer
+uniform here is set one at a time.
+
+### The host's clock is in milliseconds and the header does not say so
+
+Resolume sends milliseconds; the harness sends seconds. `Clock` measures the
+unit against a wall clock over the first few frames rather than assuming it, and
+the harness **declares** its unit through `SetClockScaleForTest` because it
+renders as fast as the GPU allows and there is nothing for the measurement to
+measure. Guess wrong and the field clock runs a thousand times fast: the
+telecine emits its whole cycle in one frame.
+
+### A negative left operand has a negative remainder in both C++ and GLSL
+
+The field index and the cycle position both go negative at start-up and under a
+phase shift. `floorMod` in `Pulldown.cpp` is what stops a negative index
+reaching `slots[]`, which is not a wrong picture but a crash.
+
+### The test card has to MOVE
+
+Everything here is the difference between one field and the next. On a still
+card every mode collapses to the input, the trail of checks all pass vacuously,
+and `sweep.py` reports almost every control dead.
+
+### `layout` is a GLSL keyword
+
+So are `flat`, `active`, `filter`, `input`, `output`, `sample`, `common`,
+`patch` and `half`. A shader that fails to compile surfaces only at runtime, as
+"the effect does nothing", with the real message in the diagnostics log.
+
+### `vcpkg.json` is invisible from the CMakeLists
+
+GLEW arrives through the vcpkg manifest and the CMakeLists never mentions it —
+so every local build and every macOS CI job passes while the Windows job fails
+at *configure*.
+
+---
+
+## What is actually verified, and what is assumed
+
+### Verified by measurement, on an M4 Max running macOS 26.4.1
+
+Everything below is `tools/verify.sh`, which builds the universal Release bundle
+from scratch and then asks it every question. All of it drives the **real plugin
+class** through the real FFGL sequence in a headless CGL context.
+
+- **Combing is exactly `v`.** A bar moving v px/frame: 1,980 rows checked per
+  speed at v = 1, 3 and 7, largest error **0 px**, and the even/odd offset is v
+  on every frame.
+- **Bob bounces one line.** A two-line rule's top edge alternates between rows
+  80 and 81; a one-line rule on an even row exists on alternate fields only.
+- **The telecine emits the pattern.** Every input frame is tagged with its own
+  grey level and read back out of the picture: 24→60 gives runs
+  `3 2 3 2 3 2 …` (A A B B B C C D D D from a different phase), 30→60 and 25→50
+  give pairs, and the input frames advance at 2.47, 2.00 and 2.40 host frames
+  per source frame against 2.50, 2.00 and 2.40 wanted.
+- **Adaptive collapses exactly.** Threshold 0 is Bob Linear and threshold 1 is
+  Weave — **0 of 2,995,200 bytes differ** in each case, over 13 frames of the
+  moving card — and 0.15 is neither (55,411 bytes from Bob Linear, 139,102 from
+  Weave).
+- **A swapped field order stutters.** Shown-field sequence `0 1 2 3 4 5 …`
+  correct, `1 0 3 2 5 4 …` swapped, asserted as the field index.
+- **The inverse telecine locks and mis-locks.** On a clean 2:3 it settles after
+  one lock change and combs **0** frames in the settled last third. After
+  cadence breaks it combs until it re-locks: 4 re-locks at Lock Time 0.05 s
+  against **0** at 4 s.
+- **A resize does not leak the old picture.** Resize up, down, and both Field
+  Source changes that resize the ring: ring rebuilt, `filled` back to 1, **0**
+  stale pixels, no crash.
+- **No dead controls.** All **14** swept parameters measurably change the
+  picture, each with the context that makes it mean anything.
+- **The build is universal and registers.** `lipo` reports `x86_64 arm64`, `nm`
+  finds `_plugMain`, the plist names the binary that is there and the bundle
+  ad-hoc signs.
+- **A host sees the right plugin.** `oxbow probe` reports name `SW Cadence`, id
+  `CD01`, type `effect`.
+- **The render cost**, `cdtest --bench`, 60 frames after a 20-frame warm-up with
+  `glFinish` on both sides:
+
+  | | ms/frame | % of a 60 fps frame |
+  | --- | --- | --- |
+  | 1280×720 | 0.227 | 1.4% |
+  | 1920×1080 | 0.532 | 3.2% |
+  | 2560×1440 | 1.008 | 6.0% |
+  | 3840×2160 | 2.143 | 12.9% |
+
+  Inverse Telecine costs more, because it adds a diff, a reduce and a
+  **synchronous readback** per field: 0.709 / 0.857 / 1.455 / 3.181 ms at the
+  same four rasters. The readback is the reason, and it is a deliberate trade —
+  the alternative is a fence and a frame of extra latency in the detector.
+
+### Assumed, or not done
+
+- ☠️ **It has never been loaded into Resolume.** Everything above runs the
+  plugin class directly in a headless GL context. What only a real host
+  exercises: `plugMain` and `instantiateGL` (the `SetTextParameter` trap lives
+  there), whether Resolume honours the four parameter groups, whether the
+  option lists read sensibly in the inspector, and what the host's clock
+  actually looks like on the way in. It has not been installed into Extra
+  Effects either.
+- ☠️ **The audio path has only ever seen a synthetic click train.** Break On
+  Onset works against `--tone`, which pushes a spectrum through the same call
+  Resolume uses, but no real music has driven it and the bin count and
+  magnitudes are taken from macroblock rather than measured here.
+- **Nothing has been built for Windows.** The CI and release workflows are
+  adapted from tinsel and afterglow and have **never run** — this repo has no
+  remote. The GLEW-from-vcpkg path is not known to configure.
+- **No OpenFX port and no browser demo.** Not required for 0.1.0.
+- **No user guide**, so `guide` is empty in `StoatworksAbout.h` and the About
+  block has three buttons rather than four. `StoatworksAbout.h` and
+  `ATTRIBUTIONS.md` are provisional hand copies in the shape the fleet's sync
+  scripts generate, as graticule's are; register the project in the website's
+  `projects.json` and re-run the syncs before any release.
+- **No factory presets.** The fleet's preset mechanism — and the
+  host-restatement bug it exists to survive — is deliberately not here: with
+  fifteen controls and four groups there is nothing a preset would say that the
+  defaults and one dropdown do not. If presets are added later, copy the
+  `hostValues[]` pattern from afterglow whole, including `seedHostValues()`
+  running *before* `applyPreset` can.
+- **The 4:2:2 chroma question is not addressed.** Real interlaced video in 4:2:0
+  has its chroma sited per field, which is a whole second artefact. Everything
+  here is RGB.
+- **Nothing has been through a real show.**
+
+---
+
+## Decisions made along the way
+
+- **`Break Interval` restarts the cycle at a random phase, never the same one.**
+  An edit that lands on the phase it left is not an edit anybody would notice,
+  so the hash picks from the other `cycle - 1` positions.
+- **The audio analysis has no controls.** macroblock exposes attack, release,
+  sensitivity and hold; here the only question the spectrum answers is "was
+  there an edit this frame", and four sliders to tune that would be four sliders
+  an operator cannot hear the difference between.
+- **`Field Rate` and `Source Rate` are options, not sliders**, because 24, 25,
+  30 and 60 are the only values that mean anything and a slider that lands on 27
+  lands on nothing.
+- **The option lists are not sorted.** Every one is a progression or a pair, and
+  there is nothing to look up alphabetically in a list of three. The fleet's
+  alphabetical-display convention exists for twenty-item lists.
+- **The ring is 4 frames under Split and 8 under the telecine**, sized to the
+  longest look-back the cadence needs rather than always the maximum: eight full
+  4K frames is a quarter of a gigabyte.
