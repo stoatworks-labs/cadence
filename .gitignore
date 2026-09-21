@@ -12,3 +12,5 @@
 /.vscode/
 *.xcodeproj/xcuserdata/
 
+# Windows cross-build output, staged from the Parallels guest
+/out-windows/

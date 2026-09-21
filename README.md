@@ -8,10 +8,11 @@
 > motion-adaptive mode is proved to collapse to Bob Linear and to Weave at its
 > two extremes **byte for byte** (0 of 2,995,200 bytes differ), and the 2:3
 > pattern is read back out of the picture rather than asserted against a second
-> copy of the rule — see [Status](#status). It has **never been loaded into
-> Resolume**: it has only been compiled, rendered and measured offline. Nothing
-> has been built for Windows. Check it in your own rig before trusting it in a
-> show.
+> copy of the rule — see [Status](#status). It **has** now been registered,
+> loaded and instantiated in **Resolume Arena 7.27.1 on Windows**, with its
+> shaders compiling — but on a **software rasteriser**, not a GPU. It has never
+> run on a GPU in Resolume, and has never been instantiated in Arena on macOS.
+> Check it in your own rig before trusting it in a show.
 
 Interlace, pulldown, and every way a deinterlacer gets it wrong — as an FFGL
 effect for [Resolume](https://resolume.com) Arena and Avenue.
@@ -85,11 +86,18 @@ Two worth knowing:
 
 ## Status
 
-**v0.1.0, and honestly early.** It has never been loaded into Resolume and has
-never been installed into Extra Effects — everything below is the offline
-harness, which drives the real plugin class headlessly. Measured on an M4 Max,
-macOS 26.4.1, on 2026-09-21. Run it yourself with `tools/verify.sh`, which builds
-the universal bundle from scratch and takes about twelve seconds.
+**v0.1.0, and honestly early.** On 2026-09-21 an x64 Windows build was
+registered, loaded and instantiated in **Resolume Arena 7.27.1** (build 15990),
+and its shaders compiled there. That machine has no GPU: OpenGL came from **Mesa
+llvmpipe**, a software rasteriser, dropped in beside Arena. So the plugin has
+still **never run on a GPU in Resolume**, and has **never been instantiated in
+Arena on macOS** or installed into Extra Effects. Nothing was timed on Windows —
+the render cost below is macOS only.
+
+Everything else below is the offline harness, which drives the real plugin class
+headlessly. Measured on an M4 Max, macOS 26.4.1, on 2026-09-21. Run it yourself
+with `tools/verify.sh`, which builds the universal bundle from scratch and takes
+about twelve seconds.
 
 | Check | Result |
 | --- | --- |
@@ -103,13 +111,19 @@ the universal bundle from scratch and takes about twelve seconds.
 | No dead controls | all **14** swept parameters measurably change the picture |
 | macOS binary | universal (`x86_64 arm64`), exports `plugMain`, plist correct, ad-hoc signs |
 | What a host sees | `oxbow probe`: name `SW Cadence`, id `CD01`, type `effect` |
-| Render cost | **0.53 ms/frame at 1080p**, 2.14 ms at 4K (0.86 and 3.18 in Inverse Telecine, which adds a readback per field) |
+| Windows x64 DLL | 374,272 B, `dumpbin /EXPORTS` shows `plugMain` |
+| In Resolume Arena 7.27.1 | listed among 112 video effects under its `idstring` `CD01`; applied from Arena's own effects browser; logged `GL vendor=Mesa renderer=llvmpipe … 4.5 (Core Profile)` then `initialised`, and Arena drew its inspector, groups and all; diag log clean of WARN/ERROR/FAIL |
+| Headless on x64 Windows | `oxbow selftest`: **120 frames, gl error 0x0, PASS**, 921,600 of 921,600 pixels lit |
+| Host clock unit | seconds under oxbow, **milliseconds** under Arena — the detector met a real host for the first time |
+| Render cost (macOS) | **0.53 ms/frame at 1080p**, 2.14 ms at 4K (0.86 and 3.18 in Inverse Telecine, which adds a readback per field) |
 
-**Not done:** never loaded into Resolume; nothing built or run for Windows, and
-the CI and release workflows have never run because this repo has no remote; no
-OpenFX port and no browser demo (neither is required at 0.1.0); no user guide, so
-the About block has three buttons rather than four; no factory presets; the audio
-path has only ever seen a synthetic click train, never real music.
+**Not done:** never run on a GPU in Resolume, and never instantiated in Arena on
+macOS; no frame timing on Windows; no long session, no composition save/reload
+and no preset recall in the host; the CI and release workflows have never run
+because this repo has no remote; no OpenFX port and no browser demo (neither is
+required at 0.1.0); no user guide, so the About block has three buttons rather
+than four; no factory presets; the audio path has only ever seen a synthetic
+click train — no real audio reached it in Arena either.
 `source/StoatworksAbout.h` and `ATTRIBUTIONS.md` are provisional hand copies in
 the shape the fleet's sync scripts generate. See [AGENTS.md](AGENTS.md) for the
 full list of what is assumed rather than measured, and for the traps.
@@ -130,6 +144,12 @@ macOS builds universal (arm64 + x86_64) by default; add
 
 A bundle you build yourself is unsigned, which is fine locally — quarantine only
 applies to files that arrive from a browser.
+
+The x64 Windows DLL is cross-compiled in a Parallels guest on this Mac (ARM64
+Windows 11, MSVC 2022 Build Tools, `cmake -A x64`, vcpkg triplet
+`x64-windows-static-md`) — the same route the fleet's `winbuild` scripts take.
+There is no x64 Windows machine in the build loop. The DLL that Arena loaded was
+374,272 B and exports `plugMain`.
 
 ## Building and testing
 

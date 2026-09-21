@@ -213,6 +213,12 @@ renders as fast as the GPU allows and there is nothing for the measurement to
 measure. Guess wrong and the field clock runs a thousand times fast: the
 telecine emits its whole cycle in one frame.
 
+Confirmed on 2026-09-21, the first time this code met a real host: under oxbow
+cadence settled on `scale=1.000000` (**seconds**) by frame 60, and under Arena
+the host time is in **milliseconds** (raw ≈ 574,073 during that run). The two
+units are both real and the detector is what tells them apart — do not hard-code
+either one.
+
 ### A negative left operand has a negative remainder in both C++ and GLSL
 
 The field index and the cycle position both go negative at start-up and under a
@@ -235,7 +241,29 @@ So are `flat`, `active`, `filter`, `input`, `output`, `sample`, `common`,
 
 GLEW arrives through the vcpkg manifest and the CMakeLists never mentions it —
 so every local build and every macOS CI job passes while the Windows job fails
-at *configure*.
+at *configure*. The x64 Windows build that ran in Arena was configured and built
+in the Parallels guest with the vcpkg triplet `x64-windows-static-md`; the GitHub
+Windows job itself has still never run.
+
+### ☠️ An ssh session on Windows has no desktop
+
+An ssh login on Windows lands on the **service window station**, which has no
+desktop. Arena started from there sits at about 31 MB doing nothing, cannot be
+screenshotted, and never serves its REST API. It has to be launched in the
+console session (session 1) through the scheduled-task wrapper — on win-lab,
+`C:\arena-lab\s1.ps1`. Every attempt to shortcut this wastes a round trip and
+looks like a plugin fault.
+
+### ☠️ Arena's REST API lists effects by `idstring`, and its add-effect endpoint lies
+
+`/api/v1/effects` and `/api/v1/sources` name each plugin by its **FFGL id** in
+the `idstring` field — this one is `CD01`, not `SW Cadence` — so search on the
+id. The add-effect endpoint **returns 200 without adding anything**: nothing
+appears in the layer or clip and no plugin is instantiated. Instantiation has to
+be driven from **Arena's own effects browser** (double-click applies to the
+current selection), and the proof that it happened is the plugin's own diag log,
+not the clip's effect list. On the 2026-09-21 run the effect was applied to the
+composition and `/api/v1/…/clips/1` still showed only `Transform` afterwards.
 
 ---
 
@@ -292,22 +320,60 @@ class** through the real FFGL sequence in a headless CGL context.
   same four rasters. The readback is the reason, and it is a deliberate trade —
   the alternative is a fence and a frame of extra latency in the detector.
 
+### Verified in a real host: Resolume Arena 7.27.1 on Windows, 2026-09-21
+
+On **win-lab** — an x64 Windows 11 Pro VM with **no GPU**, where OpenGL comes
+from **Mesa llvmpipe** dropped in beside Arena (`GL vendor=Mesa
+renderer=llvmpipe (LLVM 22.1.8, 256 bits) version=4.5 (Core Profile) Mesa
+26.2.0`) — against **Resolume Arena 7.27.1** (build 15990) running in the console
+session:
+
+- **The x64 DLL builds and exports the entry point.** Cross-compiled in the
+  Parallels guest on this Mac (ARM64 Windows 11, MSVC 2022 Build Tools,
+  `cmake -A x64`, vcpkg triplet `x64-windows-static-md`) — the same route the
+  fleet's `winbuild` scripts use; there is no x64 Windows machine in the build
+  loop. **374,272 B**, and `dumpbin /EXPORTS` shows `plugMain`.
+- **Arena registers it.** Arena's own REST API lists `SW Cadence` among 112 video
+  effects, under `idstring` `CD01`, with the description the plugin declares.
+- **Arena loads the DLL.** The diag log under `%LOCALAPPDATA%\cadence\logs\`
+  carries `plugin loaded build=<stamp>` with the stamp of the DLL built minutes
+  earlier.
+- **Arena instantiates it and the shaders compile.** Applied from Arena's own
+  effects browser, it logged the `GL vendor=Mesa … 4.5 (Core Profile)` line
+  followed by `initialised`, and Arena drew its inspector for it, groups and all.
+  So `plugMain`, `instantiateGL` and the `SetTextParameter` trap are all
+  exercised for the first time.
+- **It instantiates and renders headlessly on x64 Windows too.** `oxbow selftest`
+  (oxbow built x64 in the same guest): **120 frames, gl error 0x0, PASS**, with
+  **921,600 of 921,600** pixels lit — full frame, as a full-frame effect should
+  be.
+- **The host clock unit detection works in a real host.** Milliseconds under
+  Arena against seconds under oxbow — see the clock trap above.
+- **No warnings or errors.** The diag log is clean of WARN/ERROR/FAIL.
+
+What that run did **not** show: no GPU was involved anywhere, so it says nothing
+about performance on Windows and **no frame timing was taken there** — the
+ms/frame table above is macOS only. No real audio reached the plugin in Arena. No
+long session, no composition save/reload and no preset recall in the host. The
+effect was applied to the **composition**, not to a clip.
+
 ### Assumed, or not done
 
-- ☠️ **It has never been loaded into Resolume.** Everything above runs the
-  plugin class directly in a headless GL context. What only a real host
-  exercises: `plugMain` and `instantiateGL` (the `SetTextParameter` trap lives
-  there), whether Resolume honours the four parameter groups, whether the
-  option lists read sensibly in the inspector, and what the host's clock
-  actually looks like on the way in. It has not been installed into Extra
-  Effects either.
+- ☠️ **It has never run on a GPU in Resolume**, and has **never been instantiated
+  in Arena on macOS** — nor installed into Extra Effects there. Everything the
+  Windows run proved, it proved on a software rasteriser: registration, load,
+  instantiation, shader compilation, the parameter groups in the inspector and
+  the host's clock unit. What a real GPU driver does with these shaders, and what
+  the macOS bundle does in front of Arena, are both still untested.
 - ☠️ **The audio path has only ever seen a synthetic click train.** Break On
   Onset works against `--tone`, which pushes a spectrum through the same call
-  Resolume uses, but no real music has driven it and the bin count and
-  magnitudes are taken from macroblock rather than measured here.
-- **Nothing has been built for Windows.** The CI and release workflows are
-  adapted from tinsel and afterglow and have **never run** — this repo has no
-  remote. The GLEW-from-vcpkg path is not known to configure.
+  Resolume uses, but no real music has driven it — no real audio reached the
+  plugin in Arena either — and the bin count and magnitudes are taken from
+  macroblock rather than measured here. Resolume's 64-bin FFT mapping is still
+  assumed, not measured.
+- **The CI and release workflows have never run.** They are adapted from tinsel
+  and afterglow and this repo has no remote. The Windows DLL was built by hand in
+  the Parallels guest, not by the Windows CI job.
 - **No OpenFX port and no browser demo.** Not required for 0.1.0.
 - **No user guide**, so `guide` is empty in `StoatworksAbout.h` and the About
   block has three buttons rather than four. `StoatworksAbout.h` and

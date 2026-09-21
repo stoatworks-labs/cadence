@@ -29,8 +29,12 @@ the inverse telecine.
 - The inverse telecine locks, mis-locks and re-locks: `./build/cdtest --lock`
 - A resize clears the ring: `./build/cdtest --ring`
 - No dead controls: `python3 tools/sweep.py`
-- Render cost: `./build/cdtest --bench` (0.53 ms/frame at 1080p, 2.14 at 4K)
+- Render cost: `./build/cdtest --bench` (0.53 ms/frame at 1080p, 2.14 at 4K; macOS only — nothing has been timed on Windows)
 - What a host sees: `../oxbow/build/oxbow probe build-universal/Cadence.bundle`
+- Windows x64: cross-compiled in the Parallels guest (`cmake -A x64`, vcpkg
+  `x64-windows-static-md`); the DLL that Arena loaded was 374,272 B and
+  `dumpbin /EXPORTS` shows `plugMain`. `oxbow selftest` there: 120 frames, gl
+  error 0x0, PASS, 921,600 of 921,600 pixels lit.
 
 ## Notes
 - **A field is a slice of TIME, not just a slice of lines.** Field `k` carries
@@ -74,12 +78,26 @@ the inverse telecine.
 - macOS build must be universal. Verify with `lipo`, never the build log.
 - FFGL id is `CD01`.
 
+## In a real host
+- Registered, loaded and instantiated in **Resolume Arena 7.27.1** (build 15990)
+  on Windows, 2026-09-21, with the shaders compiling — on **Mesa llvmpipe**, a
+  software rasteriser, on a machine with no GPU.
+- Arena lists it under its `idstring` `CD01`. Its add-effect REST endpoint
+  returns 200 without adding anything, so instantiate from Arena's own effects
+  browser. See AGENTS.md.
+- **The host clock is in milliseconds under Arena and seconds under oxbow.**
+- An ssh session on Windows has no desktop; Arena has to be started through the
+  session-1 scheduled-task wrapper. See AGENTS.md.
+
 ## Not done yet
-- **Never loaded into Resolume**, and never installed into Extra Effects.
+- **Never run on a GPU in Resolume**, and never instantiated in Arena on macOS
+  or installed into Extra Effects there.
+- No frame timing on Windows; no long session, composition save/reload or preset
+  recall in the host; no real audio in the host.
 - No remote, no release tag, no website registration, no OpenFX port, no
   browser demo, no user guide.
 - `source/StoatworksAbout.h` and `ATTRIBUTIONS.md` are provisional hand copies.
-- Windows and the CI workflows have never run.
+- The CI and release workflows have never run.
 
 ## Diagnostics
 
@@ -88,4 +106,8 @@ Resolume), no bundle command. It records which shader failed to compile, the GL
 vendor/renderer/version, a ring that could not be allocated, and the host's
 clock unit at frame 60.
 
-    ~/Library/Logs/cadence/cadence.YYYY-MM-DD.log
+    ~/Library/Logs/cadence/cadence.YYYY-MM-DD.log     (macOS)
+    %LOCALAPPDATA%\cadence\logs\cadence.YYYY-MM-DD.log     (Windows)
+
+On the 2026-09-21 Windows run that log is the proof of instantiation: `plugin
+loaded build=<stamp>`, then the GL vendor/renderer line and `initialised`.
