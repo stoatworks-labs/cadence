@@ -24,6 +24,25 @@ and the bar are each in two places at once — their two fields are 1/60 s apart
 and a weave shows both. The grating top-left is twittering. Rendered by `cdtest`,
 not captured from Resolume.*
 
+## Try it in your browser
+
+**<https://cadence-demo.stoatworks-labs.com>**
+
+Not the plugin — the five shaders from `source/Shaders.cpp`, copied across
+unedited and run in WebGL2, with a real ring of recent frames, the plugin's own
+field-parity arithmetic ported from `Pulldown.cpp`, and the parameters this
+plugin's constructor declares. No install, and nothing you load leaves your
+machine.
+
+Leave it on Split and Weave and look at the sweeping bar: its edge is serrated,
+because the two fields it is woven from were shot a field period apart. Then try
+Mode → Bob to watch the block bounce a line, Show Decision under Adaptive to see
+the mask that decides, and the *2:3 judder* preset for what a 24 fps film looks
+like laid out into 60 fields.
+
+The audio side is absent there and the page says so: `Break On Onset` needs a
+Resolume FFT parameter and a browser has none.
+
 <!-- downloads:start -->
 
 ## Download
@@ -151,8 +170,10 @@ about twelve seconds.
 
 **Not done:** never run on a GPU in Resolume, and never instantiated in Arena on
 macOS; no frame timing on Windows; no long session, no composition save/reload
-and no preset recall in the host; no OpenFX port and no browser demo (neither is
-required at 0.1.0); no user guide, so the About block has three buttons rather
+and no preset recall in the host; no OpenFX port (not required at 0.1.0); the
+[browser demo](https://cadence-demo.stoatworks-labs.com) runs the plugin's own
+shaders but its CPU half is a hand port that nothing but a reader checks, and it
+has no audio side at all; no user guide, so the About block has three buttons rather
 than four; no factory presets; the audio path has only ever seen a synthetic
 click train — no real audio reached it in Arena either. `ATTRIBUTIONS.md` is
 still a provisional hand copy in the shape the fleet's sync scripts generate;
@@ -200,11 +221,28 @@ The harness renders the real plugin class offline and asserts one claim per flag
 ./build/cdtest --ring                   # a resize mid-run clears the ring
 ./build/cdtest --bench                  # 720p through 4K
 python3 tools/sweep.py                  # no control is silently dead
+python3 demo/tools/check_shaders.py     # the browser demo runs THIS repo's GLSL
 tools/verify.sh                         # all of it, from a fresh universal build
 ```
 
 `--set "Name=value"` sets any control by its display name, repeatably, and
 `--tone` pushes a synthetic click train into the audio input.
+
+It also runs as a filter, which is how a clip gets put through the plugin
+without a host:
+
+```bash
+ffmpeg -i in.mov -f rawvideo -pix_fmt rgba - \
+  | ./build/cdtest --pipe --width 1920 --height 1080 --script cues.txt \
+  | ffmpeg -f rawvideo -pix_fmt rgba -s 1920x1080 -r 60 -i - out.mov
+```
+
+`--script` is a plain text file of `frame  Parameter Name  value` lines, held
+before the first key and after the last and interpolated between — so an option
+parameter passes through every value on the way, and cues that must cut belong
+one frame apart. The clock is driven by the frame index rather than by the rate
+the pipe delivers: a field is a slice of time, so a stall upstream must not show
+up in the finished file as the cadence speeding up.
 
 <!-- attributions:start -->
 This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).

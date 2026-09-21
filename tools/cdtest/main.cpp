@@ -16,6 +16,7 @@
 		cdtest --swap                   swapped field order: 1 0 3 2 5 4
 		cdtest --ring                   a resize mid-run clears the ring
 		cdtest --bench                  the render cost, 720p through 4K
+		cdtest --pipe                   raw frames in, raw frames out
 
 	Every check has one flag, every flag has one claim, and every claim is
 	stated in the README's Status table with the number this printed.
@@ -23,6 +24,25 @@
 	**The test card MOVES.** Everything this plugin does is the difference
 	between one field and the next; on a still card every mode collapses to
 	the input and `tools/sweep.py` would report most controls dead.
+
+	`--pipe` takes the fleet's frame format, so one filming script can drive
+	any of these plugins:
+
+		ffmpeg -i in.mov -f rawvideo -pix_fmt rgba - \
+		  | cdtest --pipe --width 1920 --height 1080 [--script cues.txt] \
+		  | ffmpeg -f rawvideo -pix_fmt rgba -s 1920x1080 -i - out.mov
+
+	`--script` is a plain text file of `frame  Parameter Name  value` lines,
+	the same format as tinseltest, old-cathode's octest and porthole's
+	phtest. Values are held before the first key and after the last, and
+	linearly interpolated between.
+
+	Note what interpolation means for an **option** parameter -- Field
+	Source, Source Rate, Field Rate, Field Order, Mode, Display. Moving one
+	produces the intermediate values on the way, so a change from Weave to
+	Adaptive passes through Bob, Bob Linear and Blend. Key them one frame
+	apart to cut, and give every such parameter a hold key at the END of
+	each section it must not move in.
 */
 
 #include "Cadence.h"
@@ -31,6 +51,7 @@
 
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
+#include <unistd.h>
 #include <zlib.h>
 
 #include <algorithm>
@@ -38,6 +59,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -378,6 +402,87 @@ void listParameters( Cadence& plugin )
 		else
 			std::printf( "%3u  %-20s  %-8s %8.4f  [ %g .. %g ]\n", i, name ? name : "?", kindName( type ), value, 0.0f, high );
 	}
+}
+
+//---------------------------------------------------------------------------
+// --pipe cue sheet: one `frame Parameter Name value` per line, applied when
+// the frame number is reached and linearly interpolated between keys. The same
+// format tinseltest, octest and phtest read, so one filming script drives any
+// of them.
+//---------------------------------------------------------------------------
+using Track = std::vector< std::pair< int, float > >;
+
+std::map< std::string, Track > loadScript( const std::string& path, std::string& error )
+{
+	std::map< std::string, Track > tracks;
+	std::ifstream file( path );
+	if( !file )
+	{
+		error = "cannot open " + path;
+		return tracks;
+	}
+
+	std::string line;
+	int lineNumber = 0;
+	while( std::getline( file, line ) )
+	{
+		++lineNumber;
+		const size_t hash = line.find( '#' );
+		if( hash != std::string::npos )
+			line.erase( hash );
+		std::istringstream in( line );
+
+		int frame = 0;
+		if( !( in >> frame ) )
+			continue;//blank or comment
+
+		//The name is everything up to the last token, because parameters have
+		//spaces in them ("Adaptive Threshold") and the value never does.
+		std::vector< std::string > words;
+		std::string word;
+		while( in >> word )
+			words.push_back( word );
+		if( words.size() < 2 )
+		{
+			error = path + ":" + std::to_string( lineNumber ) + ": expected `frame Parameter Name value`";
+			return {};
+		}
+
+		const float value = std::strtof( words.back().c_str(), nullptr );
+		words.pop_back();
+		std::string name = words.front();
+		for( size_t i = 1; i < words.size(); ++i )
+			name += " " + words[ i ];
+
+		tracks[ name ].emplace_back( frame, value );
+	}
+
+	for( auto& entry : tracks )
+		std::sort( entry.second.begin(), entry.second.end() );
+	return tracks;
+}
+
+float valueAt( const Track& track, int frame )
+{
+	if( track.empty() )
+		return 0.0f;
+	if( frame <= track.front().first )
+		return track.front().second;
+	if( frame >= track.back().first )
+		return track.back().second;
+
+	for( size_t i = 1; i < track.size(); ++i )
+	{
+		if( frame <= track[ i ].first )
+		{
+			const auto& a    = track[ i - 1 ];
+			const auto& b    = track[ i ];
+			const float span = static_cast< float >( b.first - a.first );
+			const float t    = span > 0.0f ? ( static_cast< float >( frame - a.first ) / span ) : 1.0f;
+			return a.second + ( b.second - a.second ) * t;
+		}
+	}
+	return track.back().second;
 }
 
 /// A click train through the same call the host uses. Every sixth frame a
@@ -1306,6 +1411,117 @@ int runBench( const std::vector< std::string >& settings, int frames, double fps
 }
 
 //---------------------------------------------------------------------------
+// --pipe
+//
+// Raw RGBA in, raw RGBA out, one frame at a time, through the real plugin
+// class -- the same Session every check above uses, so what a reel shows is
+// what the checks measured.
+//
+// The clock is SYNTHETIC and driven by the frame index, not by the wall clock
+// and not by the rate the pipe delivers. That is not a detail on this plugin:
+// a field is a slice of time, so a stall in ffmpeg upstream would otherwise
+// show up in the finished reel as the cadence speeding up, and 2:3 would stop
+// being 2:3 halfway through a shot.
+//---------------------------------------------------------------------------
+int runPipe( int width, int height, double fps, const std::string& scriptPath,
+             const std::vector< std::string >& settings, bool tone )
+{
+	Session session( width, height, fps );
+	session.tone = tone;
+
+	for( const std::string& setting : settings )
+		if( !session.set( setting ) )
+			return 2;
+
+	//Resolve the script's parameter names to indices once, up front, and
+	//refuse to run on a name that is not a parameter. A misspelled name that
+	//silently did nothing would produce a take that looks deliberate and is
+	//wrong -- the reel would hold whatever the default was, with a caption
+	//over it describing a control that never moved.
+	std::map< unsigned int, Track > automation;
+	if( !scriptPath.empty() )
+	{
+		std::string error;
+		const std::map< std::string, Track > tracks = loadScript( scriptPath, error );
+		if( !error.empty() )
+		{
+			std::fprintf( stderr, "%s\n", error.c_str() );
+			return 2;
+		}
+
+		for( const auto& entry : tracks )
+		{
+			const int index = findParameter( session.Plugin(), entry.first );
+			if( index < 0 )
+			{
+				std::fprintf( stderr, "script names '%s', which is not a parameter (try --list)\n",
+				              entry.first.c_str() );
+				return 2;
+			}
+			automation[ static_cast< unsigned int >( index ) ] = entry.second;
+		}
+	}
+
+	if( !session.init() )
+		return 1;
+
+	Image frame( static_cast< size_t >( width ) * height * 4 );
+	Image out;
+
+	for( int index = 0;; ++index )
+	{
+		size_t filled = 0;
+		while( filled < frame.size() )
+		{
+			const ssize_t got = read( STDIN_FILENO, frame.data() + filled, frame.size() - filled );
+			if( got <= 0 )
+				break;
+			filled += static_cast< size_t >( got );
+		}
+
+		//End of stream. A PARTIAL frame is dropped rather than padded: half a
+		//frame of black at the end of a reel is a flash, and a flash in an
+		//export is a bug report. It also catches the commonest mistake here,
+		//a --width or --height that does not match what ffmpeg is sending --
+		//which otherwise produces a sheared picture rather than a message.
+		if( filled < frame.size() )
+		{
+			if( filled > 0 )
+				std::fprintf( stderr,
+				              "dropped %zu bytes of a partial frame at frame %d -- do --width %d "
+				              "--height %d match the stream?\n",
+				              filled, index, width, height );
+			break;
+		}
+
+		for( const auto& track : automation )
+			session.Plugin().SetFloatParameter( track.first, valueAt( track.second, index ) );
+
+		if( !session.render( frame, index, &out ) )
+		{
+			std::fprintf( stderr, "ProcessOpenGL failed on frame %d\n", index );
+			return 1;
+		}
+
+		size_t written = 0;
+		while( written < out.size() )
+		{
+			const ssize_t put = write( STDOUT_FILENO, out.data() + written, out.size() - written );
+			if( put <= 0 )
+				break;
+			written += static_cast< size_t >( put );
+		}
+
+		//The consumer went away: ffmpeg hitting its own -frames limit, or a
+		//head further down the pipeline. Not an error.
+		if( written < out.size() )
+			break;
+	}
+
+	return 0;
+}
+
+//---------------------------------------------------------------------------
 void usage()
 {
 	std::printf(
@@ -1327,6 +1543,8 @@ void usage()
 		"  --lock            inverse telecine: a clean cadence settles; a break combs until it re-locks\n"
 		"  --ring            a resize mid-run rebuilds the ring empty, no crash\n"
 		"  --bench           time ProcessOpenGL at 720p through 4K\n"
+		"  --pipe            raw RGBA frames on stdin, raw RGBA frames on stdout\n"
+		"  --script PATH     parameter cues for --pipe: 'frame Parameter Name value'\n"
 		"  --help\n" );
 }
 } // namespace
@@ -1335,6 +1553,7 @@ int main( int argc, char** argv )
 {
 	std::string outPath = "/tmp/cadence.png";
 	std::string cardPath;
+	std::string scriptPath;
 	int width  = 1280;
 	int height = 720;
 	int frames = 24;
@@ -1342,7 +1561,7 @@ int main( int argc, char** argv )
 	bool tone  = false;
 	bool wantList = false, wantComb = false, wantBob = false, wantPattern = false;
 	bool wantAdaptive = false, wantSwap = false, wantRing = false, wantBench = false;
-	bool wantLock = false;
+	bool wantLock = false, wantPipe = false;
 	std::vector< std::string > settings;
 
 	for( int i = 1; i < argc; ++i )
@@ -1359,6 +1578,8 @@ int main( int argc, char** argv )
 			outPath = argv[ ++i ];
 		else if( argument == "--card" && hasNext )
 			cardPath = argv[ ++i ];
+		else if( argument == "--script" && hasNext )
+			scriptPath = argv[ ++i ];
 		else if( argument == "--size" && hasNext )
 		{
 			const std::string size = argv[ ++i ];
@@ -1401,6 +1622,8 @@ int main( int argc, char** argv )
 			wantRing = true;
 		else if( argument == "--bench" )
 			wantBench = true;
+		else if( argument == "--pipe" )
+			wantPipe = true;
 		else
 		{
 			std::fprintf( stderr, "unknown argument: %s\n", argument.c_str() );
@@ -1449,6 +1672,16 @@ int main( int argc, char** argv )
 	{
 		std::fprintf( stderr, "could not create an OpenGL context\n" );
 		return 1;
+	}
+
+	//Before anything else that could print: stdout is the video in --pipe and
+	//one stray line of text in it is a torn frame for the rest of the reel.
+	if( wantPipe )
+	{
+		const int piped = runPipe( width, height, fps, scriptPath, settings, tone );
+		CGLSetCurrentContext( nullptr );
+		CGLDestroyContext( context );
+		return piped;
 	}
 
 	int result = 0;

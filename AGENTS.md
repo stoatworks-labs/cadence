@@ -378,7 +378,22 @@ effect was applied to the **composition**, not to a clip.
   is macOS-only: Windows is built only by the release workflow, on a tag. The DLL
   that ran in Arena was built by hand in the Parallels guest, not by that job, so
   the released Windows binary has never been in front of a host.
-- **No OpenFX port and no browser demo.** Not required for 0.1.0.
+- **No OpenFX port.** Not required for 0.1.0.
+- **The browser demo's CPU half is a hand port that nothing checks but a
+  reader.** `demo/tools/check_shaders.py` proves the five shaders in
+  `demo/plugin.js` are `source/Shaders.cpp` character for character, and
+  `verify.sh` runs it. It proves nothing at all about the JavaScript port of
+  `Pulldown.cpp`, `Controls.cpp` and the ring/field/presentation half of
+  `ProcessOpenGL`, which is where this plugin's ideas actually live. That port
+  was checked **once, by hand, on 2026-09-21** against a sweep of the C++ — 700
+  cases of `SourceFrameOfField`, `SourceFrameTime`, `FieldParity` and
+  `CycleFields` across five rate pairs and five phases, and 120 fields of
+  `InverseTelecine` — and every integer answer, every lock, every cycle position
+  and every weave decision agreed exactly, with the conversions differing only
+  in float32-against-float64 rounding past the eighth significant figure. That
+  was a one-off at the time of writing and there is **no standing check**; it
+  will go stale the first time the arithmetic moves without the page moving with
+  it.
 - **No user guide**, so `guide` is empty in `StoatworksAbout.h` and the About
   block has three buttons rather than four. That header is **generated** by
   `sync-about.py` now — the project is registered in the website's
@@ -417,3 +432,69 @@ effect was applied to the **composition**, not to a clip.
 - **The ring is 4 frames under Split and 8 under the telecine**, sized to the
   longest look-back the cadence needs rather than always the maximum: eight full
   4K frames is a quarter of a gigabyte.
+
+### The browser demo, 2026-09-21
+
+- **Inverse Telecine is in the demo, and the diff and reduce passes with it.**
+  The obvious call was to leave it out as "a CPU detector" — it is one, and the
+  kit's other demos have dropped whole CPU stages. It went in because
+  `InverseTelecine` is thirty lines of one-pole average and an argmin with a
+  margin, and because leaving it out would have taken the mis-lock with it — the
+  artefact the *whole Cadence Break control exists to produce*, and the most
+  interesting thing the plugin does. The cost is that the page declares
+  `needFloat`, because the detector reads a 16×1 RGBA32F row back with
+  `readPixels`. That was checked in the browser before it was relied on:
+  `EXT_color_buffer_float` present, `RGBA`/`FLOAT` the implementation read pair,
+  and a value of 123.5 clearing and reading back exactly — i.e. genuinely
+  unclamped float, not a normalised buffer quietly pretending.
+- **The demo draws its own moving bar over the clip, and says so.** None of the
+  kit's generated clips move fast enough to comb, and this plugin is *about*
+  motion: on a still picture every mode collapses to the input, which is the
+  same reason the harness's test card moves (see "The test card has to MOVE").
+  The overlay is a sweeping vertical bar, a vertically moving block and a
+  one-line and a two-line static rule on even rows — the same three jobs the
+  harness's card does. It is a pass of the page's own, deliberately **not** in
+  `check_shaders.py`'s table, disclosed in the page header comment and in the
+  on-page "what this page does not reproduce" list, and switchable off from the
+  transport. The alternative considered and rejected was to comb the clip
+  harder by inventing a pan, which would have been the same intervention with
+  none of the honesty.
+- **The audio side is absent rather than present and dead.** `Break On Onset`
+  and the 64-bin `Audio` buffer are not on the page at all. A browser has no
+  Resolume FFT parameter, and asking a visitor for a microphone to demonstrate a
+  video effect is not a trade worth making. The free-running half of Cadence
+  Break — an edit every `Break Interval` — *is* there and is the same code path,
+  so the mis-lock is still visible; what is not visible is a kick drum choosing
+  the moment.
+- **Only the clamping half of `Clock.cpp` is ported.** The unit calibration
+  answers a question a browser does not ask. The visible consequence is that
+  **Restart restarts the clip and not the field clock**, which is the plugin's
+  own behaviour — its clock is monotonic, and a host scrubbing backwards moves
+  it forward by a 240th of a second.
+- **The page's presets are the page's**, and the disclosure says so. This plugin
+  ships no factory preset table (see above), so unlike macroblock's there is
+  nothing in the repository for them to mirror. Every value in one is a real
+  control at a real position; the choice of which is the page's.
+
+### `--pipe`, 2026-09-21
+
+- **`cdtest --pipe` is the same `Session` the checks use**, not a second render
+  path, so what a reel shows is what `--comb` and `--adaptive` measured.
+- **Its clock is driven by the frame index, never by the wall clock or by the
+  rate the pipe delivers.** On this plugin that is not housekeeping: a field is
+  a slice of time, so a stall in ffmpeg upstream would otherwise appear in the
+  finished file as the cadence speeding up, and 2:3 would stop being 2:3
+  halfway through a shot.
+- **A partial frame at the end is dropped, not padded**, and says so on stderr
+  with the width and height it was expecting. Half a frame of black at the end
+  of a reel is a flash, and a flash in an export is a bug report — and the
+  commonest mistake with this flag is a `--width` that does not match what
+  ffmpeg is sending, which otherwise produces a sheared picture rather than a
+  message.
+- **Everything but the video goes to stderr.** One stray line in stdout is a
+  torn frame for the rest of the reel, which is also why `--pipe` is dispatched
+  before any other path in `main` can print.
+- A script naming a parameter that does not exist is refused **before a frame is
+  read**. A misspelled name that silently did nothing would produce a take that
+  looks deliberate and is wrong: the reel would hold whatever the default was,
+  with a caption over it describing a control that never moved.

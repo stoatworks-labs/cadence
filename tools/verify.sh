@@ -36,6 +36,12 @@
 #   --ring        a resize mid-run, and a Field Source change that resizes
 #                 the ring, rebuild it empty without a crash and without a
 #                 pixel of the old picture surviving.
+#   demo          that demo/plugin.js still carries the plugin's OWN five
+#                 shaders, character for character. The browser demo's whole
+#                 claim is that what it runs is this repository's GLSL, and two
+#                 copies of a shader is exactly the arrangement that drifts --
+#                 invisibly from both sides, because the plugin keeps working
+#                 and the page keeps working.
 #   sweep.py      that no control is silently dead. A GLSL uniform whose name
 #                 does not match the C++ is ignored without a word, so this is
 #                 the only thing standing between a typo and a shipped slider
@@ -198,6 +204,20 @@ else
 	printf '   *** dead controls, see /tmp/cadence-sweep.txt\n'
 	tail -6 /tmp/cadence-sweep.txt
 	fail "tools/sweep.py reports a dead control"
+fi
+
+step "demo: the browser page runs the plugin's own shaders"
+if [ -f demo/tools/check_shaders.py ]; then
+	if python3 demo/tools/check_shaders.py > /tmp/cadence-demo.txt 2>&1; then
+		tail -1 /tmp/cadence-demo.txt
+		pass "demo/plugin.js carries the plugin's GLSL, character for character"
+	else
+		printf '   *** the demo has drifted, see /tmp/cadence-demo.txt\n'
+		tail -12 /tmp/cadence-demo.txt
+		fail "demo/plugin.js no longer matches source/Shaders.cpp"
+	fi
+else
+	printf '   skipped: demo/tools/check_shaders.py is not here\n'
 fi
 
 step "bench: the render cost, for the record"
