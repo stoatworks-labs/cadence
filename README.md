@@ -24,6 +24,19 @@ and the bar are each in two places at once — their two fields are 1/60 s apart
 and a weave shows both. The grating top-left is twittering. Rendered by `cdtest`,
 not captured from Resolume.*
 
+## Watch it
+
+[![Cadence — interlace, pulldown and bad deinterlacing](docs/video-thumb.png)](https://www.youtube.com/watch?v=iJNUAEDmrjA)
+
+[**Cadence — interlace, pulldown and bad deinterlacing**](https://www.youtube.com/watch?v=iJNUAEDmrjA)
+(53 seconds). Combing under Weave, the bob bounce, the ghost a Blend leaves, the
+adaptive mode's decision mask, 2:3 pulldown, and a cadence break that mis-locks
+the inverse telecine until it recovers. Every frame is the real plugin: an FFGL
+plugin has no window, so the footage is rendered by this repository's own
+`cdtest --pipe` harness rather than screen recorded, from the same class
+Resolume loads. The clips are Resolume's own bundled demo media, played at 2x so
+that every frame handed to the plugin is one field.
+
 ## Try it in your browser
 
 **<https://cadence-demo.stoatworks-labs.com>**
