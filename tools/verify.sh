@@ -72,6 +72,20 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+# oxbow, the FFGL test host. It sits beside this repo's checkout -- and from
+# a git worktree `..` is the worktrees folder, not Projects/resolume, so the
+# main checkout is found through git's common dir as well. OXBOW names the
+# binary outright.
+OXBOW_REPO=""
+for candidate in "../oxbow" \
+                 "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)")/../oxbow"; do
+	if [ -d "$candidate/build" ]; then
+		OXBOW_REPO="$candidate"
+		break
+	fi
+done
+OXBOW_REPO="${OXBOW_REPO:-../oxbow}"
+
 # The universal build IS the thing being verified, so it is built here rather
 # than assumed. build/ stays whatever the developer left it.
 BUILD="${BUILD:-build-universal}"
@@ -276,8 +290,7 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$BUNDLE" ]; then
 	rm -rf "$tmp"
 
 	step "oxbow: the name, id and type a host sees"
-	OXBOW="${OXBOW:-../oxbow/build/oxbow}"
-	[ -x "$OXBOW" ] || OXBOW="$HOME/Projects/resolume/oxbow/build/oxbow"
+	OXBOW="${OXBOW:-$OXBOW_REPO/build/oxbow}"
 	if [ -x "$OXBOW" ]; then
 		out=$( "$OXBOW" probe "$BUNDLE" 2>&1 )
 		printf '%s\n' "$out" | sed -n '1,8p' | sed 's/^/   /'
