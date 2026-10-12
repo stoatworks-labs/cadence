@@ -2,27 +2,27 @@
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. The field arithmetic is
-> verified numerically by an offline harness that drives the real plugin class in
-> a headless GL context: a bar moving v pixels a frame is proved to comb by
-> **exactly v on every row** (1,980 rows per speed, largest error 0 px), the
-> motion-adaptive mode is proved to collapse to Bob Linear and to Weave at its
-> two extremes **byte for byte** (0 of 2,995,200 bytes differ), and the 2:3
-> pattern is read back out of the picture rather than asserted against a second
-> copy of the rule — see [Status](#status). It **has** now been registered,
-> loaded and instantiated in **Resolume Arena 7.27.1 on Windows**, with its
-> shaders compiling — but on a **software rasteriser**, not a GPU. It has never
-> run on a GPU in Resolume, and has never been instantiated in Arena on macOS.
-> Check it in your own rig before trusting it in a show.
+> checked numerically by an offline harness that drives the real plugin class in
+> a headless GL context. A bar moving v pixels a frame combs by **exactly v on
+> every row** (1,980 rows per speed, largest error 0 px), the motion-adaptive mode
+> collapses to Bob Linear and to Weave at its two extremes **byte for byte** (0 of
+> 2,995,200 bytes differ), and the 2:3 pattern is read back out of the picture
+> rather than checked against a second copy of the rule (see [Status](#status)). It
+> **has** now been registered, loaded and instantiated in **Resolume Arena 7.27.1 on
+> Windows**, with its shaders compiling, but on a **software rasteriser**, not a GPU.
+> It's never run on a GPU in Resolume, and has never been instantiated in Arena on
+> macOS. Check it in your own rig before you trust it in a show.
 
-Interlace, pulldown, and every way a deinterlacer gets it wrong — as an FFGL
-effect for [Resolume](https://resolume.com) Arena and Avenue.
+Interlace, pulldown, and every way a deinterlacer gets it wrong, as an FFGL
+effect for [Resolume](https://resolume.com) Arena and Avenue. All the artefacts
+broadcast engineers spent years stamping out, put back on purpose.
 
 ![A weave on moving material: the disc and the bar each in two places at once, one field period apart](docs/hero.png)
 
 *Weave on a 30i stream built from the harness's own moving test card. The disc
-and the bar are each in two places at once — their two fields are 1/60 s apart,
-and a weave shows both. The grating top-left is twittering. Rendered by `cdtest`,
-not captured from Resolume.*
+and the bar are each in two places at once: their two fields are 1/60 s apart,
+and a weave shows both. The grating top-left is twittering. Rendered by `cdtest`
+rather than captured from Resolume.*
 
 ## Watch it
 
@@ -31,9 +31,9 @@ not captured from Resolume.*
 [**Cadence — interlace, pulldown and bad deinterlacing**](https://www.youtube.com/watch?v=iJNUAEDmrjA)
 (53 seconds). Combing under Weave, the bob bounce, the ghost a Blend leaves, the
 adaptive mode's decision mask, 2:3 pulldown, and a cadence break that mis-locks
-the inverse telecine until it recovers. Every frame is the real plugin: an FFGL
-plugin has no window, so the footage is rendered by this repository's own
-`cdtest --pipe` harness rather than screen recorded, from the same class
+the inverse telecine until it recovers. It's all the plugin's own output. An FFGL
+plugin doesn't have a window to film, so the footage comes from this repo's own
+`cdtest --pipe` harness rather than a screen recording, from the same class
 Resolume loads. The clips are Resolume's own bundled demo media, played at 2x so
 that every frame handed to the plugin is one field.
 
@@ -41,20 +41,20 @@ that every frame handed to the plugin is one field.
 
 **<https://cadence-demo.stoatworks-labs.com>**
 
-Not the plugin — the five shaders from `source/Shaders.cpp`, copied across
+It isn't the plugin. It's the five shaders from `source/Shaders.cpp`, copied across
 unedited and run in WebGL2, with a real ring of recent frames, the plugin's own
 field-parity arithmetic ported from `Pulldown.cpp`, and the parameters this
-plugin's constructor declares. No install, and nothing you load leaves your
-machine.
+plugin's constructor declares. There's nothing to install, and nothing you load
+leaves your machine.
 
 Leave it on Split and Weave and look at the sweeping bar: its edge is serrated,
-because the two fields it is woven from were shot a field period apart. Then try
+because the two fields it's woven from were shot a field period apart. Then try
 Mode → Bob to watch the block bounce a line, Show Decision under Adaptive to see
 the mask that decides, and the *2:3 judder* preset for what a 24 fps film looks
 like laid out into 60 fields.
 
-The audio side is absent there and the page says so: `Break On Onset` needs a
-Resolume FFT parameter and a browser has none.
+The audio side isn't there, and the page says so: `Break On Onset` needs a
+Resolume FFT parameter and a browser hasn't got one.
 
 <!-- downloads:start -->
 
@@ -93,8 +93,8 @@ macOS builds are signed and notarised and open normally. The Windows builds are 
 **A field is a slice of time, not just a slice of lines.**
 
 A television picture is two fields 1/50 or 1/60 s apart, each carrying alternate
-lines. Cadence treats the clip that way — one rule, `field k carries the source
-frame current at the middle of its own field period` — then puts a film cadence
+lines. Cadence treats the clip that way, with one rule (`field k carries the source
+frame current at the middle of its own field period`), then puts a film cadence
 in front of it and shows the result on a progressive screen through a
 deinterlacer you choose.
 
@@ -110,58 +110,59 @@ Everything you recognise falls out of that. None of it is drawn:
 | **A mis-lock** | An edit landing mid-cycle, which a naive inverse telecine keeps weaving the wrong pair through until it re-locks. |
 | **The stutter** | Believing the wrong field came first: two steps forward, one back. |
 
-There is no table of cadences anywhere in the source. 2:3, 2:2 and one-field-per-frame
+There's no table of cadences anywhere in the source. 2:3, 2:2 and one-field-per-frame
 are the same equation at different rates.
 
 ![The adaptive decision mask: white where the two fields disagree and the pixel bobs, black where they agree and it weaves](docs/decision.png)
 
 *`Adaptive` with **Show Decision** on: white is where the two fields disagree
 enough that the pixel bobs, black is where they agree and it weaves. Everything
-that moved is white; everything that did not is black. Move **Adaptive
-Threshold** and watch the line between them — too high and combing leaks into the
+that moved is white; everything that didn't is black. Move **Adaptive
+Threshold** and watch the line between them: too high and combing leaks into the
 black, too low and still detail goes soft in the white.*
 
 ## Controls
 
-**Source** — how the clip becomes fields.
-*Field Source* (`Split`: one input frame per field, alternating parity — honest,
-and the default; `Telecine`: the input taken as *Source Rate* and laid into
-*Field Rate*; `Cadence Break`: the same with an edit every *Break Interval*, or
-on an audio onset), *Source Rate* (24/25/30/60), *Field Rate* (50/60), *Field
-Order*, *Swap Field Order*, *Break Interval*, *Break On Onset*, *Audio*.
+**Source:** how the clip becomes fields.
+*Field Source* (`Split`: one input frame per field, alternating parity, which is
+the honest one and the default; `Telecine`: the input taken as *Source Rate* and
+laid into *Field Rate*; `Cadence Break`: the same with an edit every *Break
+Interval*, or on an audio onset), *Source Rate* (24/25/30/60), *Field Rate*
+(50/60), *Field Order*, *Swap Field Order*, *Break Interval*, *Break On Onset*,
+*Audio*.
 
-**Deinterlace** — *Mode* (`Weave`, `Bob`, `Bob Linear`, `Blend`, `Adaptive`,
+**Deinterlace:** *Mode* (`Weave`, `Bob`, `Bob Linear`, `Blend`, `Adaptive`,
 `Inverse Telecine`), *Adaptive Threshold*, *Lock Time*, *Show Decision*.
 
-**Display** — *Display* (`Progressive`, or `Fields` for one field on its own
+**Display:** *Display* (`Progressive`, or `Fields` for one field on its own
 lines with the rest black, which is what a CRT shows in one field period),
 *Line Filter*.
 
-**Output** — *Mix*.
+**Output:** *Mix*.
 
 Two worth knowing:
 
-- **Swap Field Order does nothing under Weave**, and that is correct rather than
-  a bug — a weave uses both fields and does not care which came first. It shows
-  up the moment a mode displays one field at a time.
+- **Swap Field Order does nothing under Weave**, and that's correct: a weave
+  uses both fields and doesn't care which came first. It shows up the moment a
+  mode displays one field at a time.
 - **Lock Time** decides whether the inverse telecine re-locks after an edit *at
   all*. Short, and it chases every break; long, and it never converges and sits
   on whatever it locked onto first.
 
 ## Status
 
-**v0.1.0, and honestly early.** On 2026-09-21 an x64 Windows build was
+**v0.1.0, and still early days.** On 2026-09-21 an x64 Windows build was
 registered, loaded and instantiated in **Resolume Arena 7.27.1** (build 15990),
 and its shaders compiled there. That machine has no GPU: OpenGL came from **Mesa
 llvmpipe**, a software rasteriser, dropped in beside Arena. So the plugin has
 still **never run on a GPU in Resolume**, and has **never been instantiated in
-Arena on macOS** or installed into Extra Effects. Nothing was timed on Windows —
+Arena on macOS** or installed into Extra Effects. Nothing was timed on Windows;
 the render cost below is macOS only.
 
 Everything else below is the offline harness, which drives the real plugin class
-headlessly. Measured on an M4 Max, macOS 26.4.1, on 2026-09-21. Run it yourself
-with `tools/verify.sh`, which builds the universal bundle from scratch and takes
-about twelve seconds.
+without a window. Measured on an M4 Max, macOS 26.4.1, on 2026-09-21. Run it
+yourself with `tools/verify.sh`, which builds the universal bundle from scratch and
+takes about twelve seconds.
 
 | Check | Result |
 | --- | --- |
@@ -183,15 +184,15 @@ about twelve seconds.
 
 **Not done:** never run on a GPU in Resolume, and never instantiated in Arena on
 macOS; no frame timing on Windows; no long session, no composition save/reload
-and no preset recall in the host; no OpenFX port (not required at 0.1.0); the
+and no preset recall in the host; no OpenFX port (not needed for 0.1.0); the
 [browser demo](https://cadence-demo.stoatworks-labs.com) runs the plugin's own
 shaders but its CPU half is a hand port that nothing but a reader checks, and it
 has no audio side at all; no user guide, so the About block has three buttons rather
 than four; no factory presets; the audio path has only ever seen a synthetic
-click train — no real audio reached it in Arena either. `ATTRIBUTIONS.md` is
+click train, and no real audio reached it in Arena either. `ATTRIBUTIONS.md` is
 still a provisional hand copy in the shape the fleet's sync scripts generate;
 `source/StoatworksAbout.h` is generated from the project's registration now. See
-[AGENTS.md](AGENTS.md) for the full list of what is assumed rather than measured,
+[AGENTS.md](AGENTS.md) for the full list of what's assumed rather than measured,
 and for the traps.
 
 ## Build
@@ -205,22 +206,22 @@ cmake --install build     # straight into Resolume's Extra Effects folder, on ma
 ```
 
 macOS builds universal (arm64 + x86_64) by default; add
-`-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster development build. Needs CMake
-3.15+, a C++17 compiler and the FFGL SDK submodule (pinned to `b1afaf9`).
+`-DCMAKE_OSX_ARCHITECTURES=arm64` for a quicker development build. You'll need
+CMake 3.15+, a C++17 compiler and the FFGL SDK submodule (pinned to `b1afaf9`).
 
-A bundle you build yourself is unsigned, which is fine locally — quarantine only
+A bundle you build yourself is unsigned, which is fine locally: quarantine only
 applies to files that arrive from a browser.
 
 The released x64 Windows DLL is built by the release workflow on a GitHub
 `windows-latest` runner. The one that ran in Arena was cross-compiled locally in
 a Parallels guest on this Mac (ARM64 Windows 11, MSVC 2022 Build Tools,
-`cmake -A x64`, vcpkg triplet `x64-windows-static-md`) — the same route the
-fleet's `winbuild` scripts take, because there is no x64 Windows machine in the
+`cmake -A x64`, vcpkg triplet `x64-windows-static-md`), the same route the
+fleet's `winbuild` scripts take, because there's no x64 Windows machine in the
 local build loop. The DLL that Arena loaded was 374,272 B and exports `plugMain`.
 
 ## Building and testing
 
-The harness renders the real plugin class offline and asserts one claim per flag:
+The harness renders the real plugin class offline and checks one claim per flag:
 
 ```bash
 ./build/cdtest --out /tmp/frame.png     # the moving test card, through the plugin
@@ -251,10 +252,10 @@ ffmpeg -i in.mov -f rawvideo -pix_fmt rgba - \
 ```
 
 `--script` is a plain text file of `frame  Parameter Name  value` lines, held
-before the first key and after the last and interpolated between — so an option
+before the first key and after the last and interpolated between, so an option
 parameter passes through every value on the way, and cues that must cut belong
 one frame apart. The clock is driven by the frame index rather than by the rate
-the pipe delivers: a field is a slice of time, so a stall upstream must not show
+the pipe delivers: a field is a slice of time, so a stall upstream mustn't show
 up in the finished file as the cadence speeding up.
 
 <!-- attributions:start -->
@@ -265,7 +266,7 @@ This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTI
 
 MIT — see [LICENSE](LICENSE).
 
-The processes modelled here — 2:3 pulldown, weave, bob, field blending,
-motion-adaptive deinterlacing and inverse telecine — are decades old and
+The processes modelled here (2:3 pulldown, weave, bob, field blending,
+motion-adaptive deinterlacing and inverse telecine) are decades old and
 described in the broadcast engineering literature. No code was taken from any
 deinterlacer implementation.
