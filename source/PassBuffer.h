@@ -8,7 +8,7 @@ namespace cadence
 	An off-screen buffer: one slot of the frame ring, or one stage of the
 	inverse-telecine measurement.
 
-	Three things on top of the SDK's FFGLFBO, all inherited from the fleet.
+	Four things on top of the SDK's FFGLFBO, all inherited from the fleet.
 
 	**It reallocates only when it has to.** `Ensure()` is called every frame
 	for every slot and is a no-op in the overwhelming majority of them.
@@ -28,6 +28,12 @@ namespace cadence
 	only sampling anything here wants. The other two are kept because the
 	trap of choosing wrongly is silent: `GL_LINEAR` on a data buffer does
 	not fail, it returns plausible averages of unrelated numbers.
+
+	**It has no depth buffer.** `FFGLFBO::Initialise()` always attaches a
+	24-bit depth renderbuffer the size of the picture, and nothing here draws
+	with depth: at 4K that is about 32 MB a buffer for nothing. Ensure()
+	allocates through InitialiseColourOnly() instead, the same steps with the
+	colour texture alone.
 */
 class PassBuffer : public ffglex::FFGLFBO
 {
@@ -81,6 +87,11 @@ public:
 	}
 
 private:
+	/// FFGLFBO::Initialise() less the depth renderbuffer: the framebuffer, the
+	/// colour texture and its attachment, and everything released again if
+	/// the framebuffer is not complete.
+	bool InitialiseColourOnly( GLsizei requestedWidth, GLsizei requestedHeight, GLint format );
+
 	Sampling sampling = Sampling::Nearest;
 };
 
