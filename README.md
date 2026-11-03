@@ -17,6 +17,8 @@ Interlace, pulldown, and every way a deinterlacer gets it wrong, as an FFGL
 effect for [Resolume](https://resolume.com) Arena and Avenue. All the artefacts
 broadcast engineers spent years stamping out, put back on purpose.
 
+The [project page](https://stoatworks-labs.com/software/cadence/) has the downloads and the video.
+
 ![A weave on moving material: the disc and the bar each in two places at once, one field period apart](docs/hero.png)
 
 *Weave on a 30i stream built from the harness's own moving test card. The disc
